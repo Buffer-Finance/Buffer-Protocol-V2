@@ -1,13 +1,38 @@
 # Buffer-Protocol-V2
 
-## Set Up for running the testcases
 
-### Install brownie
+## Set Up for running the testcases (Linux)
+
+
+## Install
+
+```bash
 pip install eth-brownie
+```
 
-### Change in brownie.yaml 
-remappings: 
-'@openzeppelin={Substitute your path to open zeppelin here}’
+```bash
+brownie pm install OpenZeppelin/openzeppelin-contracts@4.3.2
+```
 
-### Run command : brownie test tests/test_erc3525.py 
+## Tasks
 
+### Create and activate a virtual environment
+
+```bash
+python3 -m venv env
+```
+```bash
+source env/bin/activate
+```
+
+### Add a .env file to the folder
+
+```bash
+touch .env
+```
+
+### Run tests
+
+```bash
+brownie test
+```
