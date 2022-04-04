@@ -5,9 +5,6 @@
 ### Install brownie
 pip install eth-brownie
 
-### Install openzeppelin
-npm install @openzeppelin/contracts
-
 ### Change in brownie.yaml 
 remappings: 
 '@openzeppelin={Substitute your path to open zeppelin here}’
