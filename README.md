@@ -9,4 +9,5 @@ pip install eth-brownie
 remappings: 
 '@openzeppelin={Substitute your path to open zeppelin here}’
 
+### Run command : brownie test tests/test_erc3525.py 
 
