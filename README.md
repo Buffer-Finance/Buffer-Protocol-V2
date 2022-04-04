@@ -27,7 +27,7 @@ source env/bin/activate
 ```
 ### Update brownie.yaml
 
-#### In the brownie.yaml fiile, under compiler, update the remapping for OpenZeppelin
+#### In the brownie.yaml file, under compiler, update the remapping for OpenZeppelin
 
 ```bash
 remappings: 
