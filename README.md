@@ -6,11 +6,11 @@
 
 ## Install
 
-#Brownie
+### Brownie
 ```bash
 pip install eth-brownie
 ```
-#OpenZeppelin
+### OpenZeppelin
 ```bash
 brownie pm install OpenZeppelin/openzeppelin-contracts@4.3.2
 ```
@@ -26,7 +26,7 @@ python3 -m venv env
 source env/bin/activate
 ```
 
-### Add a .env file to the folder
+### Add an environment file (.env) to the folder
 
 ```bash
 touch .env
