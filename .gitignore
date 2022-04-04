@@ -3,3 +3,5 @@ env/*
 node_modules/*
 build/*
 *.pyc
+package.json
+package-lock.json
