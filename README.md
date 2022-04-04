@@ -6,10 +6,11 @@
 
 ## Install
 
+#Brownie
 ```bash
 pip install eth-brownie
 ```
-
+#OpenZeppelin
 ```bash
 brownie pm install OpenZeppelin/openzeppelin-contracts@4.3.2
 ```
