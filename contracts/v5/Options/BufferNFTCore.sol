@@ -398,26 +398,26 @@ abstract contract BufferNFTCore is
         return newTokenId;
     }
 
-    function safeTransferFrom(
-        address from_,
-        address to_,
-        uint256 tokenId_,
-        uint256 targetTokenId_,
-        uint256 transferUnits_,
-        bytes memory data_
-    ) public virtual {
-        transferFrom(from_, to_, tokenId_, targetTokenId_, transferUnits_);
-        require(
-            _checkOnNFTReceived(
-                from_,
-                to_,
-                targetTokenId_,
-                transferUnits_,
-                data_
-            ),
-            "to non NFTReceiver"
-        );
-    }
+    // function safeTransferFrom(
+    //     address from_,
+    //     address to_,
+    //     uint256 tokenId_,
+    //     uint256 targetTokenId_,
+    //     uint256 transferUnits_,
+    //     bytes memory data_
+    // ) public virtual {
+    //     transferFrom(from_, to_, tokenId_, targetTokenId_, transferUnits_);
+    //     require(
+    //         _checkOnNFTReceived(
+    //             from_,
+    //             to_,
+    //             targetTokenId_,
+    //             transferUnits_,
+    //             data_
+    //         ),
+    //         "to non NFTReceiver"
+    //     );
+    // }
 
 
     function getSlotDetail(uint256 slot_)

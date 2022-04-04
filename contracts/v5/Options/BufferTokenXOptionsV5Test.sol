@@ -60,10 +60,10 @@ contract BufferTokenXOptionsV5Test is OptionsCore {
         _price = 40000000000;
     }
 
-    function setMaxUnits(uint256 value) external onlyOwner {
-        maxUnits = value;
-        emit UpdateUnits(value);
-    }
+    // function setMaxUnits(uint256 value) external onlyOwner {
+    //     maxUnits = value;
+    //     emit UpdateUnits(value);
+    // }
 
     /**
      * @notice Creates a new option
