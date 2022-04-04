@@ -1,0 +1,18 @@
+{
+    "editor.formatOnSave": true,
+    "python.formatting.provider": "black",
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true
+    },
+    "python.linting.mypyEnabled": true,
+    "python.envFile": "${workspaceRoot}/.env",
+     // "solidity.packageDefaultDependenciesContractsDirectory": "app/app/buffer-contracts",
+     "solidity.remappings": [
+        "@openzeppelin=/home/oem/.brownie/packages/OpenZeppelin/openzeppelin-contracts@4.3.2"
+    ],
+    // "solidity.packageDefaultDependenciesContractsDirectory": "~/.brownie/packages",
+    // "solidity.packageDefaultDependenciesDirectory": "~/.brownie/packages",
+    "solidity.packageDefaultDependenciesContractsDirectory": "app/buffer-contracts",
+    "solidity.packageDefaultDependenciesDirectory": "app/buffer-contracts/node_modules"
+
+}
