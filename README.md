@@ -25,6 +25,11 @@ python3 -m venv env
 ```bash
 source env/bin/activate
 ```
+### Update brownie.yaml
+
+#### In the brownie.yaml fiile, under compiler, update the remapping for OpenZeppelin
+remappings: 
+      - '@openzeppelin=$HOME/.brownie/packages/OpenZeppelin/openzeppelin-contracts@4.3.2'
 
 ### Add an environment file (.env) to the folder
 
