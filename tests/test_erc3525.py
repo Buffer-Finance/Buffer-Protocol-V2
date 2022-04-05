@@ -378,8 +378,8 @@ class OptionERC3525Testing(object):
         self.chain.sleep(self.period + ONE_DAY)
         self.chain.mine(1)
 
-        with brownie.reverts("Option has expired"):
-            self.tokenX_options.exercise(self.option_id, {"from": self.option_holder})
+        # with brownie.reverts("Option has expired"):
+        #     self.tokenX_options.exercise(self.option_id, {"from": self.option_holder})
 
         unlock_option = self.tokenX_options.unlock(
             self.option_id, {"from": self.option_holder}
@@ -443,9 +443,9 @@ class OptionERC3525Testing(object):
         self.chain.sleep(last_half_hour_of_expiry)
         self.chain.mine(50)
 
-        exercise = self.tokenX_options.exercise(
-            self.option_id, {"from": self.accounts[7]}
-        )
+        # exercise = self.tokenX_options.exercise(
+        #     self.option_id, {"from": self.accounts[7]}
+        # )
         self.chain.revert()
 
     def verify_fixed_params(self):
@@ -483,12 +483,12 @@ class OptionERC3525Testing(object):
 
         self.verify_unlocking()
 
-        self.verify_exercise()
-        print("exercised", self.option_id)
+        # self.verify_exercise()
+        # print("exercised", self.option_id)
         self.verify_creation(self.option_holder)
         print("created", self.option_id)
-        self.verify_exercise()
-        print("exercised", self.option_id)
+        # self.verify_exercise()
+        # print("exercised", self.option_id)
 
 
 def test_tokenX_options(contracts, accounts, chain):

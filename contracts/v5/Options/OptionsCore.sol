@@ -73,29 +73,29 @@ abstract contract OptionsCore is
             (isAutoExerciseTrue && isWithinLastHalfHourOfExpiry);
     }
 
-    /**
-     * @notice Exercises an active option
-     * @param optionID ID of your option
-     */
-    function exercise(uint256 optionID) external {
-        require(
-            canExercise(optionID),
-            "msg.sender is not eligible to exercise the option"
-        );
+    // /**
+    //  * @notice Exercises an active option
+    //  * @param optionID ID of your option
+    //  */
+    // function exercise(uint256 optionID) external {
+    //     require(
+    //         canExercise(optionID),
+    //         "msg.sender is not eligible to exercise the option"
+    //     );
 
-        Option storage option = options[optionID];
+    //     Option storage option = options[optionID];
 
-        require(option.expiration >= block.timestamp, "Option has expired");
-        require(option.state == State.Active, "Wrong state");
+    //     require(option.expiration >= block.timestamp, "Option has expired");
+    //     require(option.state == State.Active, "Wrong state");
 
-        option.state = State.Exercised;
-        uint256 profit = payProfit(optionID);
+    //     option.state = State.Exercised;
+    //     uint256 profit = payProfit(optionID);
 
-        // Burn the option
-        _burn(optionID);
+    //     // Burn the option
+    //     _burn(optionID);
 
-        emit Exercise(optionID, profit);
-    }
+    //     emit Exercise(optionID, profit);
+    // }
 
     // /**
     //  * @notice Unlocks an array of options
