@@ -1,5 +1,4 @@
-# Buffer-Protocol-V2
-
+![Buffer](./header.png)
 
 ## Set Up for running the testcases (Linux)
 
