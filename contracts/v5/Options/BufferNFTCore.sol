@@ -2,8 +2,8 @@ pragma solidity ^0.8.0;
 
 /**
  * SPDX-License-Identifier: GPL-3.0-or-later
- * Buffer
- * Copyright (C) 2020 Buffer Protocol
+ * 
+ * Copyright (c) 2021 solv-finance 
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
