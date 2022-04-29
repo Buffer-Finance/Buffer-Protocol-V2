@@ -1,8 +1,15 @@
 pragma solidity ^0.8.0;
 
-/**
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
+interface IPancakePair {
+    function getReserves()
+        external
+        view
+        returns (
+            uint112 reserve0,
+            uint112 reserve1,
+            uint32 blockTimestampLast
+        );
+}
 
 interface ILiquidityPool {
     struct LockedLiquidity {
@@ -23,15 +30,21 @@ interface ILiquidityPool {
     function unlock(uint256 id) external;
 
     // function unlockPremium(uint256 amount) external;
-}
-
-interface ILiquidityPoolV5 is ILiquidityPool {
     event UpdateRevertTransfersInLockUpPeriod(
         address indexed account,
         bool value
     );
+    event InitiateWithdraw(uint256 tokenXAmount, address account);
+    event ProcessWithdrawRequest(uint256 tokenXAmount, address account);
+    event UpdatePoolState(bool hasPoolEnded);
+    event PoolRollOver(uint256 round);
+    event UpdateMaxLiquidity(uint256 indexed maxLiquidity);
+    event UpdateExpiry(uint256 expiry);
+    event UpdateProjectOwner(address account);
 
     function totalTokenXBalance() external view returns (uint256 amount);
+
+    function unlockWithoutProfit(uint256 id) external;
 
     function send(
         uint256 id,
@@ -45,18 +58,14 @@ interface ILiquidityPoolV5 is ILiquidityPool {
         uint256 premium
     ) external;
 
-    function getExpiry() external view returns (uint256);
-
-    function getLockedAmount() external view returns (uint256);
-
-    function lockChange(
+    function changeLock(
         uint256 id,
         uint256 tokenXAmount,
         uint256 premium
     ) external;
 }
 
-interface IBufferOptionsV5 {
+interface IBufferOptions {
     event Create(
         uint256 indexed id,
         address indexed account,
@@ -69,7 +78,6 @@ interface IBufferOptionsV5 {
     event Expire(uint256 indexed id, uint256 premium);
     event PayReferralFee(address indexed referrer, uint256 amount);
     event PayAdminFee(address indexed owner, uint256 amount);
-    event UpdateUnits(uint256 value);
     event AutoExerciseStatusChange(address indexed account, bool status);
 
     enum State {
@@ -82,6 +90,10 @@ interface IBufferOptionsV5 {
         Invalid,
         Put,
         Call
+    }
+    enum PaymentMethod {
+        Usdc,
+        TokenX
     }
 
     event UpdateOptionCreationWindow(
@@ -141,7 +153,6 @@ interface IBufferOptionsV5 {
     }
 }
 
-
 interface INFTReceiver {
     function onNFTReceived(
         address operator,
@@ -168,6 +179,7 @@ interface IOptionsConfig {
     event UpdateNFTSaleRoyaltyPercentage(uint256 value);
     event UpdateTradingPermission(PermittedTradingType permissionType);
     event UpdateStrike(uint256 value);
+    event UpdateUnits(uint256 value);
 }
 
 interface IOptionWindowCreator {
@@ -206,6 +218,13 @@ interface AggregatorV3Interface {
             uint80 answeredInRound
         );
 
+    function getTimestamp(uint256 _roundId)
+        external
+        view
+        returns (
+            uint256 timestamp
+        );
+
     function latestRoundData()
         external
         view
@@ -216,6 +235,45 @@ interface AggregatorV3Interface {
             uint256 updatedAt,
             uint80 answeredInRound
         );
+}
+
+interface IPriceProvider {
+    function getUsdPrice() external view returns (uint256 _price);
+    
+    function getRoundData(uint256 _roundId) external view returns (uint80 roundId,uint256 price, uint256 startedAt, uint256 updatedAt,uint80 answeredInRound);
+    
+    function latestRoundData() external view returns (uint80 roundId, int256 answer, uint256 startedAt,  uint256 updatedAt, uint80 answeredInRound);
+
+}
+
+interface INFTCore {
+    function burnOption(uint256 optionId_) external;
+
+    function unitsInToken(uint256 optionId_) external view returns (uint256);
+
+    function slotOf(uint256 optionId_) external view returns (uint256);
+
+    function transferUnitsFrom(
+        address from_,
+        address to_,
+        uint256 optionId_,
+        uint256 targetOptionId_,
+        uint256 transferUnits_,
+        address sender
+    ) external;
+
+    function checkOnNFTReceived(
+        address from_,
+        address to_,
+        uint256 tokenId_,
+        uint256 units_,
+        bytes memory _data,
+        address sender
+    ) external returns (bool);
+
+    function isApprovedOrOwner(address account, uint256 optionId_)
+        external
+        returns (bool);
 }
 
 interface ISlidingWindowOracle {
@@ -229,15 +287,4 @@ interface ISlidingWindowOracle {
         external
         view
         returns (uint256 index);
-}
-
-interface IPancakePair {
-    function getReserves()
-        external
-        view
-        returns (
-            uint112 reserve0,
-            uint112 reserve1,
-            uint32 blockTimestampLast
-        );
 }

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
 
@@ -7,10 +7,10 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
  * @author Heisenberg
- * @title Buffer iBFR Token
+ * @title Buffer WBNB Token
  * @notice The central token to the Buffer ecosystem
  */
-contract IBFR is ERC20("iBuffer Token", "iBFR") {
+contract WBNB is ERC20("WBNB", "WBNB") {
     constructor() {
         uint256 INITIAL_SUPPLY = 100 * 10**6 * 10**decimals();
         _mint(msg.sender, INITIAL_SUPPLY);

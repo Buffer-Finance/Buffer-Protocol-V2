@@ -25,62 +25,87 @@ def isolate(fn_isolation):
 @pytest.fixture(scope="module")
 def contracts(
     IBFR,
-    PancakePair,
+    FakePriceProvider,
     OptionMath,
     ABDKMath64x64,
     accounts,
-    BufferTokenXOptionsV5Test,
-    BufferIBFRPoolV5,
+    BufferIBFRPoolV2,
     OptionConfig,
+    BufferUSDCTokenXOptions,
+    FeeCalculator,
+    WNEAR,
+    BufferEuropeanUSDCTokenXOptions,
 ):
     fixedStrike = int(395e8)
     fixedExpiry = int(time.time()) + ONE_DAY * 7
 
-    token_contract = IBFR.deploy({"from": accounts[0]})
+    ibfr_contract = IBFR.deploy({"from": accounts[0]})
 
-    ibfr_pool = BufferIBFRPoolV5.deploy(
+    wnear_contract = WNEAR.deploy({"from": accounts[0]})
+    usdc_contract = wnear_contract
+    token_contract = ibfr_contract
+    tokenX = token_contract
+
+    ibfr_pool = BufferIBFRPoolV2.deploy(
         token_contract.address, fixedExpiry, {"from": accounts[0]}
     )
-    tokenX = token_contract
+
+    pp = FakePriceProvider.deploy(int(400e8), {"from": accounts[0]})
+    bufferPp = pp
 
     # Deploy libraries
     ABDKMath64x64.deploy({"from": accounts[0]})
     OptionMath.deploy({"from": accounts[0]})
-
+    FeeCalculator.deploy({"from": accounts[0]})
     OPTION_ISSUER_ROLE = ibfr_pool.OPTION_ISSUER_ROLE()
 
-    # Deploy tokenX options
-    pancakePair = PancakePair.deploy({"from": accounts[0]})
-    pancakePair.setReserves(40000e8, 8, 1645196730)
-
-    twap = accounts[0]
-    tokenX_address = token_contract.address
-    token0 = token_contract.address
-    token1 = token_contract.address
-
+    iv = 110e2
     options_config = OptionConfig.deploy(
         accounts[7],
-        int(110e2),
+        iv,
         fixedStrike,
         ibfr_pool.address,
         {"from": accounts[0]},
     )
-    tokenX_options_v5 = BufferTokenXOptionsV5Test.deploy(
-        tokenX_address,
+
+    usdc_options = BufferUSDCTokenXOptions.deploy(
+        token_contract.address,
+        bufferPp.address,
         ibfr_pool.address,
-        token0,
-        token1,
-        twap,
-        options_config,
+        options_config.address,
+        usdc_contract.address,
         {"from": accounts[0]},
     )
+    OPTION_ISSUER_ROLE = ibfr_pool.OPTION_ISSUER_ROLE()
     ibfr_pool.grantRole(
-        OPTION_ISSUER_ROLE, tokenX_options_v5.address, {"from": accounts[0]}
+        OPTION_ISSUER_ROLE,
+        usdc_options.address,
+        {"from": accounts[0]},
+    )
+
+    european_usdc_options = BufferEuropeanUSDCTokenXOptions.deploy(
+        token_contract.address,
+        bufferPp.address,
+        ibfr_pool.address,
+        options_config.address,
+        usdc_contract.address,
+        {"from": accounts[0]},
+    )
+    OPTION_ISSUER_ROLE = ibfr_pool.OPTION_ISSUER_ROLE()
+    ibfr_pool.grantRole(
+        OPTION_ISSUER_ROLE,
+        european_usdc_options.address,
+        {"from": accounts[0]},
     )
 
     return (
+        token_contract,
+        pp,
         tokenX,
-        tokenX_options_v5,
-        ibfr_pool,
         options_config,
+        ibfr_pool,
+        usdc_options,
+        usdc_contract,
+        bufferPp,
+        european_usdc_options,
     )

@@ -1,5 +1,6 @@
+import time
 from enum import IntEnum
-from math import isclose
+from re import S
 
 import brownie
 
@@ -12,6 +13,7 @@ class OptionType(IntEnum):
 
 
 ONE_DAY = 86400
+ADDRESS_0 = "0x0000000000000000000000000000000000000000"
 
 
 def sqrt(x):
@@ -22,7 +24,7 @@ def sqrt(x):
     return result
 
 
-class OptionTesting(object):
+class OptionERC3525Testing(object):
     def __init__(
         self,
         accounts,
@@ -34,97 +36,135 @@ class OptionTesting(object):
         tokenX,
         liquidity,
         options_config,
+        usdc_contract,
+        bufferPp,
     ):
         self.tokenX_options = options
         self.options_config = options_config
         self.generic_pool = generic_pool
         self.amount = amount
-        self.option_holder = accounts[4]
+        self.option_holder = accounts[1]
         self.meta = meta
         self.accounts = accounts
         self.owner = accounts[0]
         self.user_1 = accounts[1]
         self.user_2 = accounts[2]
         self.referrer = accounts[3]
+        self.project_owner = accounts[7]
         self.option_id = 0
         self.liquidity = liquidity
         self.tokenX = tokenX
         self.chain = chain
         self.expiry = self.generic_pool.fixedExpiry()
+        self.usdc_contract = usdc_contract
         self.period = self.expiry - self.chain.time()
         self.strike = self.options_config.fixedStrike()
-
-    def verify_option_type(self):
-        # Should verify that fixedOptionType is Call
-        assert (
-            self.tokenX_options.fixedOptionType() == OptionType.CALL
-        ), "Wrong trading permission"
+        self.pp = bufferPp
 
     def verify_owner(self):
-        # Should verify the owner
+        self.generic_pool.setProjectOwner(self.project_owner, {"from": self.owner})
         assert (
             self.tokenX_options.owner() == self.accounts[0]
         ), "The owner of the contract should be the account the contract was deployed by"
 
-    def verify_role(self):
-        # Should have the option issuer role
-        OPTION_ISSUER_ROLE = self.generic_pool.OPTION_ISSUER_ROLE()
+    def get_amounts(self, value, units, option_details):
+        amount = option_details[2] / units * value
+        locked_amount = option_details[3] / units * value
+        premium = option_details[4] // units * value
 
-        assert (
-            self.generic_pool.hasRole(OPTION_ISSUER_ROLE, self.tokenX_options.address)
-            == True
-        ), "option issuer role verified"
+        return amount, locked_amount, premium
 
-    def verify_token_price(self):
-        # getTokenPrice() Should return thr tokenX/USD price
-        token_price = self.tokenX_options.getCurrentPrice()
-        print("token_price", token_price / 1e8)
-
-    def verify_creation(self):
-        # create() SHould create an option
-        # if option type is not call, revert
-        # if the total fee was X
-        # If user hasn't approved enough, revert
-        # should Transfer X tokenX from the user to the contract
-        # should Add options to the the options object
-        # should Mint the NFT
-        # should distributeSettlementFee()
-        # Should transfer stakingAmount(tokenX) from options to settlementFeeRecipient
-        # Should transfer adminFee(tokenX) from options to owner
-        # Should referralReward adminFee(tokenX) from options to referrer
-        # should approve pool to premium(tokenX)
-        # should lock()
-        # should trasnfer premium(tokenX) from options to pool
+    def verify_creation(self, minter, payment_method):
+        current_price = self.pp.getUsdPrice()
         totalTokenXBalance = self.generic_pool.totalTokenXBalance()
         if totalTokenXBalance == 0:
-            with brownie.reverts("Pool Error: The pool is empty"):
+            with brownie.reverts():
                 self.tokenX_options.create(
-                    self.amount, self.user_1, self.meta, {"from": self.user_1}
+                    self.amount,
+                    self.user_1,
+                    self.meta,
+                    payment_method,
+                    {"from": self.owner},
                 )
-
-            # Add liquidity in the pool first
             self.tokenX.transfer(self.user_2, self.liquidity, {"from": self.owner})
             self.tokenX.approve(
-                self.generic_pool.address, self.liquidity, {"from": self.user_2}
+                self.generic_pool.address, self.liquidity, {"from": self.owner}
             )
-            self.generic_pool.provide(self.liquidity, 0, {"from": self.user_2})
+            self.generic_pool.provide(self.liquidity, 0, {"from": self.owner})
 
-        with brownie.reverts("ERC20: transfer amount exceeds balance"):
-            self.tokenX_options.create(
-                self.amount, self.user_1, self.meta, {"from": self.user_1}
-            )
-
-        # Should work with the updated priceFeed(pancakePair)
         (total_fee, settlement_fee, premium) = self.tokenX_options.fees(
             self.period, self.amount, self.strike, 2
         )
+        print("total_fee", total_fee / 1e18)
 
-        self.tokenX.transfer(self.option_holder, total_fee, {"from": self.owner})
+        projectOwner = self.generic_pool.projectOwner()
+        assert projectOwner != ADDRESS_0, "Wrong project owner"
 
-        settlementFeeRecipient = self.tokenX_options.settlementFeeRecipient()
+        if payment_method == 1:
+            self.tokenX.transfer(minter, total_fee, {"from": self.owner})
+            self.tokenX.approve(
+                self.tokenX_options.address, total_fee, {"from": minter}
+            )
+        else:
+            # Because options contract does not has any tokensX
+            with brownie.reverts():
+                self.tokenX_options.create(
+                    self.amount,
+                    self.user_1,
+                    self.meta,
+                    payment_method,
+                    {"from": self.owner},
+                )
+
+            self.tokenX.transfer(
+                self.tokenX_options.address,
+                total_fee,
+                {"from": self.owner},
+            )
+            total_fee_usd = (
+                total_fee
+                * (10 ** self.usdc_contract.decimals())
+                / 10 ** self.tokenX.decimals()
+            ) * current_price
+            print(
+                "total_fee_usd",
+                total_fee_usd / 1e26,
+            )
+            self.usdc_contract.transfer(
+                minter,
+                total_fee_usd / 1e8,
+                {"from": self.owner},
+            )
+            self.usdc_contract.approve(
+                self.tokenX_options.address,
+                total_fee_usd / 1e8,
+                {"from": minter},
+            )
+
+        with brownie.reverts("ERC20: transfer amount exceeds allowance"):
+            self.tokenX_options.create(
+                self.amount,
+                self.user_1,
+                self.meta,
+                payment_method,
+                {"from": self.owner},
+            )
+        self.tokenX_options.approvePoolToTransferTokenX(
+            {"from": self.owner},
+        )
+
+        # Initial values
+        settlementFeeRecipient = self.options_config.settlementFeeRecipient()
         stakingFeePercentage = self.options_config.stakingFeePercentage()
         referralRewardPercentage = self.options_config.referralRewardPercentage()
 
+        initial_tokenX_balance_option_contract = self.tokenX.balanceOf(
+            self.tokenX_options.address
+        )
+        initial_usdc_balance_option_holder = self.usdc_contract.balanceOf(
+            self.option_holder
+        )
+        initial_usdc_balance_project_owner = self.usdc_contract.balanceOf(projectOwner)
         initial_tokenX_balance_option_holder = self.tokenX.balanceOf(self.option_holder)
         initial_tokenX_balance_settlementFeeRecipient = self.tokenX.balanceOf(
             settlementFeeRecipient
@@ -132,14 +172,14 @@ class OptionTesting(object):
         initial_tokenX_balance_pool = self.tokenX.balanceOf(self.generic_pool.address)
         initial_tokenX_balance_owner = self.tokenX.balanceOf(self.owner)
         initial_tokenX_balance_referrer = self.tokenX.balanceOf(self.referrer)
+        self.tokenX.approve(self.tokenX_options.address, total_fee, {"from": minter})
 
-        self.tokenX.approve(
-            self.tokenX_options.address, total_fee, {"from": self.option_holder}
-        )
-
+        # Creation
         option = self.tokenX_options.create(
-            self.amount, self.referrer, self.meta, {"from": self.option_holder}
+            self.amount, self.referrer, self.meta, payment_method, {"from": minter}
         )
+        option_id = option.return_value
+        self.option_id = option_id
         self.option_id = option.return_value
         (
             _,
@@ -151,11 +191,19 @@ class OptionTesting(object):
             _,
         ) = self.tokenX_options.options(self.option_id)
 
+        # Final values
         stakingAmount = (settlement_fee * stakingFeePercentage) / 100
         adminFee = settlement_fee - stakingAmount
         referralReward = (adminFee * referralRewardPercentage) / 100
         adminFee = adminFee - referralReward
 
+        final_tokenX_balance_option_contract = self.tokenX.balanceOf(
+            self.tokenX_options.address
+        )
+        final_usdc_balance_option_holder = self.usdc_contract.balanceOf(
+            self.option_holder
+        )
+        final_usdc_balance_project_owner = self.usdc_contract.balanceOf(projectOwner)
         final_tokenX_balance_option_holder = self.tokenX.balanceOf(self.option_holder)
         final_tokenX_balance_settlementFeeRecipient = self.tokenX.balanceOf(
             settlementFeeRecipient
@@ -170,16 +218,37 @@ class OptionTesting(object):
         print("premium", premium / 1e18)
         print("total_fee", total_fee / 1e18)
         print("_locked_amount", _locked_amount / 1e18)
-        assert (
-            self.tokenX.balanceOf(self.tokenX_options.address) == 0
-        ), "Something went wrong"
+
+        # asserts
+        if payment_method == 1:
+            assert (
+                final_tokenX_balance_option_contract
+                == initial_tokenX_balance_option_contract
+                and final_usdc_balance_option_holder
+                == initial_usdc_balance_option_holder
+                and final_usdc_balance_project_owner
+                == initial_usdc_balance_project_owner
+            ), "Something went wrong"
+
+        else:
+            assert (
+                final_tokenX_balance_option_contract
+                < initial_tokenX_balance_option_contract
+                and final_usdc_balance_option_holder
+                < initial_usdc_balance_option_holder
+                and final_usdc_balance_project_owner
+                > initial_usdc_balance_project_owner
+                and initial_tokenX_balance_option_holder
+                == final_tokenX_balance_option_holder
+            ), "Something went wrong"
+
         assert (
             final_tokenX_balance_owner - initial_tokenX_balance_owner
         ) == adminFee, "Wrong admin fee transfer"
-        # assert (
-        #     final_tokenX_balance_settlementFeeRecipient
-        #     - initial_tokenX_balance_settlementFeeRecipient
-        # ) == stakingAmount, "Wrong stakingAmount transfer"
+        assert (
+            final_tokenX_balance_settlementFeeRecipient
+            - initial_tokenX_balance_settlementFeeRecipient
+        ) == stakingAmount, "Wrong stakingAmount transfer"
         assert (
             final_tokenX_balance_referrer - initial_tokenX_balance_referrer
         ) == referralReward, "Wrong referralReward transfer"
@@ -189,21 +258,21 @@ class OptionTesting(object):
         # assert (
         #     initial_tokenX_balance_option_holder - final_tokenX_balance_option_holder
         # ) == total_fee, "Wrong fee transfer"
-        # # assert (
+        # assert (
         #     final_tokenX_balance_pool - initial_tokenX_balance_pool
         # ) == premium, "Wrong premium transfer"
+        return option_id
 
     def verify_unlocking(self):
-        # unlock() Unchanged
         self.chain.snapshot()
-        with brownie.reverts("Option has not expired yet"):
+        with brownie.reverts(""):
             self.tokenX_options.unlock(self.option_id, {"from": self.option_holder})
 
         self.chain.sleep(self.period + ONE_DAY)
         self.chain.mine(1)
 
-        # with brownie.reverts("Option has expired"):
-        #     self.tokenX_options.exercise(self.option_id, {"from": self.option_holder})
+        with brownie.reverts(""):
+            self.tokenX_options.exercise(self.option_id, {"from": self.option_holder})
 
         unlock_option = self.tokenX_options.unlock(
             self.option_id, {"from": self.option_holder}
@@ -213,21 +282,10 @@ class OptionTesting(object):
         self.chain.revert()
 
     def verify_exercise(self):
-        # canExercise()
-        # if current block number is same as that of creation then revert
-        option_block = self.tokenX_options.optionBlocks(self.option_id)
-        if option_block == self.chain.height:
-            with brownie.reverts("Block number not permitted"):
-                self.tokenX_options.exercise.call(
-                    self.option_id, {"from": self.option_holder}
-                )
 
-        # exercise() Unchanged
-        # payProfit()
-        # Should work with the updated priceFeed(pancakePair)
-        # SHould transfer profit(tokenX) to the option holder
         option = self.tokenX_options.options(self.option_id)
-        current_price = self.tokenX_options.getCurrentPrice()
+        current_price = self.pp.getUsdPrice()
+        print(current_price, option["strike"], "cp strike")
         profit = min(
             (current_price - option["strike"]) * option["amount"] // current_price,
             option["lockedAmount"],
@@ -250,9 +308,9 @@ class OptionTesting(object):
         ) == profit, "pool sent wrong profit"
 
     def verify_auto_exercise(self):
-        with brownie.reverts("msg.sender is not eligible to exercise the option"):
+        with brownie.reverts(""):
             self.tokenX_options.exercise(self.option_id, {"from": self.owner})
-        with brownie.reverts("msg.sender is not eligible to exercise the option"):
+        with brownie.reverts(""):
             self.tokenX_options.exercise(self.option_id, {"from": self.accounts[7]})
         AUTO_CLOSER_ROLE = self.tokenX_options.AUTO_CLOSER_ROLE()
 
@@ -267,18 +325,13 @@ class OptionTesting(object):
         self.chain.sleep(last_half_hour_of_expiry)
         self.chain.mine(50)
 
-        exercise = self.tokenX_options.exercise(
-            self.option_id, {"from": self.accounts[7]}
-        )
+        self.tokenX_options.exercise(self.option_id, {"from": self.accounts[7]})
         self.chain.revert()
 
     def verify_fixed_params(self):
-        expiry = self.generic_pool.fixedExpiry() + ONE_DAY * 10
         strike = self.options_config.fixedStrike() + int(1e8)
 
-        with brownie.reverts("Can't change expiry before the expiry ends"):
-            self.generic_pool.setExpiry(expiry)
-        with brownie.reverts("Can't change strike before the expiry ends"):
+        with brownie.reverts(""):
             self.options_config.setStrike(strike)
 
         self.chain.sleep(self.period + ONE_DAY)
@@ -286,74 +339,53 @@ class OptionTesting(object):
 
         self.options_config.setStrike(strike)
         fixedStrike = self.options_config.fixedStrike()
-        self.generic_pool.setExpiry(expiry)
-        fixedExpiry = self.generic_pool.fixedExpiry()
-
-        self.strike = fixedStrike
-        self.expiry = fixedExpiry
-        self.period = fixedExpiry - self.chain.time()
         assert fixedStrike == strike, "Wrong strike"
-        assert fixedExpiry == expiry, "Wrong Expiry"
 
     def complete_flow_test(self):
-        self.verify_option_type()
         self.verify_owner()
-        self.verify_role()
-        self.verify_token_price()
-
-        # setImpliedVolRate() Unchanged
-
-        # setSettlementFeePercentage() Unchanged
-
-        # setStakingFeePercentage() Unchanged
-
-        # setTradingPermission() Unchanged
-
-        # setReferralRewardPercentage() Unchanged
-
-        # setOptionCollaterizationRatio() Unchanged
-
-        # setNFTSaleRoyaltyPercentage() Unchanged
-
-        # setSettlementFeeRecipient() should change the settlement fee recipient
-
-        self.verify_creation()
+        # payment_method : 0. usdc 1. tokenX
+        self.option_id = self.verify_creation(self.option_holder, 1)
         print("created", self.option_id)
-
-        # getSettlementFee() Unchanged
-
-        # unlockAll() Unchanged
-
-        # unlock() Unchanged
 
         self.verify_unlocking()
 
-        # self.verify_exercise()
-        # print("exercised", self.option_id)
-
-        self.verify_creation()
+        self.verify_exercise()
+        print("exercised", self.option_id)
+        self.option_id = self.verify_creation(self.option_holder, 0)
         print("created", self.option_id)
-        # self.verify_auto_exercise()
-        # print("exercised", self.option_id)
+        self.verify_exercise()
+        print("exercised", self.option_id)
 
 
 def test_tokenX_options(contracts, accounts, chain):
 
-    (tokenX, tokenX_options_v5, ibfr_pool, options_config) = contracts
-    amount = int(1e18) // 100
+    (
+        token_contract,
+        pp,
+        tokenX,
+        options_config,
+        ibfr_pool,
+        usdc_options,
+        usdc_contract,
+        bufferPp,
+        european_usdc_options,
+    ) = contracts
+    amount = int(1e18) // 1000
     meta = "test"
-    liquidity = int(1 * 1e18)
+    liquidity = int(3 * 1e18)
 
-    option = OptionTesting(
+    option = OptionERC3525Testing(
         accounts,
-        tokenX_options_v5,
+        usdc_options,
         ibfr_pool,
         amount,
         meta,
         chain,
-        tokenX,
+        token_contract,
         liquidity,
         options_config,
+        usdc_contract,
+        bufferPp,
     )
-    option.verify_fixed_params()
     option.complete_flow_test()
+    option.verify_fixed_params()

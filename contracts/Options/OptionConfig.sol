@@ -1,51 +1,34 @@
 pragma solidity ^0.8.0;
 
-/**
- * SPDX-License-Identifier: GPL-3.0-or-later
- * Buffer
- * Copyright (C) 2020 Buffer Protocol
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: BUSL-1.1
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "../../Interfaces/InterfacesV5.sol";
+import "../Pool/BufferIBFRPoolV2.sol";
 
 /**
  * @author Heisenberg
  * @title Buffer BNB Bidirectional (Call and Put) Options
  * @notice Buffer BNB Options Contract
  */
-contract OptionConfig is Ownable, IOptionsConfig {
+contract OptionConfig is Ownable, IBufferOptions, IOptionsConfig {
     uint256 public impliedVolRate;
     uint256 public optionCollateralizationRatio = 100;
     uint256 public settlementFeePercentage = 1;
     uint256 public stakingFeePercentage = 50;
-    uint256 public referralRewardPercentage = 25;
+    uint256 public referralRewardPercentage = 0;
     uint256 public nftSaleRoyaltyPercentage = 5;
     uint256 internal constant PRICE_DECIMALS = 1e8;
     address public settlementFeeRecipient;
-    uint256 public utilizationRate = 4 * 10**7;
+    uint256 public utilizationRate = 60e8;
     uint256 public fixedStrike;
-    ILiquidityPoolV5 public pool;
+    BufferIBFRPoolV2 public pool;
     PermittedTradingType public permittedTradingType;
 
     constructor(
         address staking,
         uint256 initialImpliedVolRate,
         uint256 initialStrike,
-        ILiquidityPoolV5 _pool
+        BufferIBFRPoolV2 _pool
     ) {
         settlementFeeRecipient = staking;
         fixedStrike = initialStrike;
@@ -63,7 +46,7 @@ contract OptionConfig is Ownable, IOptionsConfig {
      * @param msgValue the msg.value given to the Create function
      */
     function checkParams(
-        IBufferOptionsV5.OptionType optionType,
+        IBufferOptions.OptionType optionType,
         uint256 period,
         uint256 amount,
         uint256 strikeFee,
@@ -71,8 +54,8 @@ contract OptionConfig is Ownable, IOptionsConfig {
         uint256 msgValue
     ) external pure {
         require(
-            optionType == IBufferOptionsV5.OptionType.Call ||
-                optionType == IBufferOptionsV5.OptionType.Put,
+            optionType == IBufferOptions.OptionType.Call ||
+                optionType == IBufferOptions.OptionType.Put,
             "Wrong option type"
         );
         require(period >= 1 days, "Period is too short");
@@ -105,7 +88,7 @@ contract OptionConfig is Ownable, IOptionsConfig {
      */
     function setStrike(uint256 value) external onlyOwner {
         require(
-            block.timestamp > pool.getExpiry(),
+            block.timestamp > pool.fixedExpiry(),
             "Can't change strike before the expiry ends"
         );
         fixedStrike = value;
