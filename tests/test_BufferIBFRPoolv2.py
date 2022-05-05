@@ -1,4 +1,5 @@
 import math
+import time
 
 import brownie
 
@@ -22,44 +23,61 @@ def test_ibfr_pool(contracts, accounts, chain):
     user_3 = accounts[3]
     user_4 = accounts[4]
     user_5 = accounts[5]
-    tokenX_contract = tokenX.address
     tokenX_amount_1 = int(3 * 1e18) // 100
     tokenX_amount_2 = int(2 * 1e18) // 100
     tokenX_amount_3 = int(1 * 1e18) // 100
-    MAX_INTEGER = 2**256 - 1
+    MAX_INTEGER = 2 ** 256 - 1
     ONE_DAY = 86400
     ADDRESS_0 = "0x0000000000000000000000000000000000000000"
 
     # Should verify lp name, lp short name and tokenX for the lp
-    _name = ibfr_pool.name()
-    _symbol = ibfr_pool.symbol()
-    _tokenX = ibfr_pool.tokenX()
-
-    assert _tokenX == tokenX_contract, "Token is incorrect"
+    assert tokenX.address == ibfr_pool.tokenX(), "Token is incorrect"
+    assert f"Buffer Generic {tokenX.symbol()} LP Token" == ibfr_pool.name()
+    assert f"r{tokenX.symbol()}" == ibfr_pool.symbol()
 
     # Should verify the roles assigned by constructor
     OPTION_ISSUER_ROLE = ibfr_pool.OPTION_ISSUER_ROLE()
+    assert ibfr_pool.hasRole(OPTION_ISSUER_ROLE, user_2) == False
     ibfr_pool.grantRole(OPTION_ISSUER_ROLE, user_2, {"from": owner})
     assert (
         ibfr_pool.hasRole(OPTION_ISSUER_ROLE, user_2) == True
-    ), "Option Issuer Role verified"
+    ), "Option Issuer Role wasn't granted"
+
     DEFAULT_ADMIN_ROLE = ibfr_pool.DEFAULT_ADMIN_ROLE()
     assert (
         ibfr_pool.hasRole(DEFAULT_ADMIN_ROLE, owner) == True
-    ), "Default Admin Role verified"
+    ), "Default Admin Role wasnt granted to deployer"
+    assert (
+        ibfr_pool.hasRole(DEFAULT_ADMIN_ROLE, user_2) == False
+    ), "Random user has Admin Role"
+
     assert ibfr_pool.owner() == owner, "Wrong buffer owner"
 
     # Should assign the expiry in the constructor
     fixedExpiry = ibfr_pool.fixedExpiry()
-    print("fixedExpiry", fixedExpiry)
-    assert fixedExpiry != None, "expiry should not be none"
-    assert not ibfr_pool.hasPoolEnded(), "wrong pool state"
+    # print("fixedExpiry", fixedExpiry)
+    assert (
+        fixedExpiry > chain.time()
+    ), "Expiry should be greater than the current block time"
+    assert not ibfr_pool.hasPoolEnded(), "Wrong pool state"
 
     # Should verify setting project owner
     with brownie.reverts():  # Wrong role
         ibfr_pool.setProjectOwner(accounts[7], {"from": user_1})
+    PROJECT_OWNER_ROLE = ibfr_pool.PROJECT_OWNER_ROLE()
+
     ibfr_pool.setProjectOwner(accounts[7], {"from": owner})
-    assert ibfr_pool.projectOwner() == accounts[7], "wrong project owner"
+    assert ibfr_pool.projectOwner() == accounts[7], "Wasn't able to set project Owner"
+    assert (
+        ibfr_pool.hasRole(PROJECT_OWNER_ROLE, accounts[7]) == True
+    ), "PROJECT_OWNER_ROLE verified"
+
+    # Should verify setting project owner
+    with brownie.reverts():  # Wrong role
+        ibfr_pool.setMaxLiquidity(5000000e18, {"from": user_1})
+    maxLiquidity = 5000000 * 10 ** tokenX.decimals()
+    ibfr_pool.setMaxLiquidity(maxLiquidity, {"from": owner})
+    assert ibfr_pool.maxLiquidity() == maxLiquidity, "Wrong maxLiquidity"
 
     # Should verify functioning of the revoke call
     chain.snapshot()
@@ -79,6 +97,12 @@ def test_ibfr_pool(contracts, accounts, chain):
         tokenX_amount_1,
     ]
     hasPoolEnded = ibfr_pool.hasPoolEnded()
+
+    # Initial share is 0
+    assert ibfr_pool.shareOf(user_1) == 0, "wrong share"
+
+    with brownie.reverts():  # Nothing to withdraw
+        ibfr_pool.withdraw(tokenX_amount_1, {"from": user_1})
 
     # provide() Should provide liquidity
     # If amount of tokenx provided to the contract are X
@@ -167,8 +191,8 @@ def test_ibfr_pool(contracts, accounts, chain):
             withdrawRequest["withdrawAmount"] - withdrawRequestInitial["withdrawAmount"]
             == amount
         ), "Wrong amount"
-        assert withdrawRequest["round"] == round, "Wrong amount"
-        assert withdrawRequest["account"] == user, "Wrong amount"
+        assert withdrawRequest["round"] == round, "Wrong round"
+        assert withdrawRequest["account"] == user, "Wrong account"
 
         assert (
             final_tokenX_balance_user - initial_tokenX_balance_user
@@ -214,13 +238,49 @@ def test_ibfr_pool(contracts, accounts, chain):
             final_tokenX_balance_user - initial_tokenX_balance_user
         ) == amountToWithdraw, "Wrong user balance"
 
+    def test_unlock(user, id):
+        ll = ibfr_pool.lockedLiquidity(user, id)
+        lockedPremium = ibfr_pool.lockedPremium()
+        lockedAmount = ibfr_pool.lockedAmount()
+
+        unlock = ibfr_pool.unlock(id, {"from": user})
+
+        final_ll = ibfr_pool.lockedLiquidity(user, id)
+        final_lockedPremium = ibfr_pool.lockedPremium()
+        final_lockedAmount = ibfr_pool.lockedAmount()
+
+        assert (
+            lockedPremium - final_lockedPremium == ll["premium"]
+        ), "Wrong lockedPremium"
+        assert lockedAmount - final_lockedAmount == ll["amount"], "Wrong lockedAmount"
+        assert unlock.events["Profit"]["amount"] == ll["premium"], "Wrong premium"
+        assert final_ll["locked"] == False, "Wrong state"
+
     # processWithdrawRequests() Should reset when 0 requests are there
     chain.snapshot()
 
     withdraw = ibfr_pool.processWithdrawRequests(2)
-    print(withdraw.events)
     isAcceptingWithdrawRequests = ibfr_pool.isAcceptingWithdrawRequests()
     assert isAcceptingWithdrawRequests, "Wrong isAcceptingWithdrawRequests"
+
+    chain.revert()
+
+    # adminWithdraw()
+    chain.snapshot()
+
+    initial_tokenX_balance_user = tokenX.balanceOf(user_1)
+    share_of = ibfr_pool.shareOf(user_1)
+
+    with brownie.reverts():  # Wrong role
+        ibfr_pool.adminWithdraw(user_1, share_of, {"from": user_1})
+
+    withdraw = ibfr_pool.adminWithdraw(user_1, share_of, {"from": owner})
+
+    final_tokenX_balance_user = tokenX.balanceOf(user_1)
+
+    assert (
+        final_tokenX_balance_user - initial_tokenX_balance_user
+    ) == share_of, "Wrong user balance"
 
     chain.revert()
 
@@ -243,6 +303,7 @@ def test_ibfr_pool(contracts, accounts, chain):
 
     chain.revert()
     lock_ids = [0, 1]
+    lock_amount = tokenX_amount_3
     # lock() Should lock funds
     # Revert if msg.sender does not has OPTION_ISSUER_ROLE
     # Revert if wrong id
@@ -279,7 +340,7 @@ def test_ibfr_pool(contracts, accounts, chain):
         initial_tokenX_balance_lp = tokenX.balanceOf(ibfr_pool.address)
 
         tokenX.approve(ibfr_pool.address, tokenX_amount_1, {"from": user_2})
-        ibfr_pool.lock(id, tokenX_amount_3, tokenX_amount_2, {"from": user_2})
+        ibfr_pool.lock(id, lock_amount, tokenX_amount_2, {"from": user_2})
 
         final_tokenX_balance_options = tokenX.balanceOf(user_2)
         final_tokenX_balance_lp = tokenX.balanceOf(ibfr_pool.address)
@@ -299,7 +360,49 @@ def test_ibfr_pool(contracts, accounts, chain):
             final_locked_liquidity - initial_locked_liquidity
         ) == tokenX_amount_3, "Wrong lockedAmount"
 
-    # unlock() unchanged
+    # changeLock()
+    old_premium = tokenX_amount_2
+    old_amount = tokenX_amount_3
+
+    def test_change_lock(new_amount, new_premium):
+        chain.snapshot()
+        initial_locked_liquidity = ibfr_pool.lockedAmount()
+        initial_locked_premimum = ibfr_pool.lockedPremium()
+        initial_tokenX_balance_options = tokenX.balanceOf(user_2)
+
+        ibfr_pool.changeLock(id, new_amount, new_premium, {"from": user_2})
+
+        final_locked_liquidity = ibfr_pool.lockedAmount()
+        final_tokenX_balance_options = tokenX.balanceOf(user_2)
+        final_locked_premimum = ibfr_pool.lockedPremium()
+
+        if old_premium > new_premium:
+            assert (
+                abs(initial_tokenX_balance_options - final_tokenX_balance_options)
+                == old_premium - new_premium
+            ), "Wrong options balance"
+        else:
+            assert (
+                abs(initial_tokenX_balance_options - final_tokenX_balance_options) == 0
+            ), "Wrong options balance"
+
+        assert (abs(final_locked_premimum - initial_locked_premimum)) == abs(
+            old_premium - new_premium
+        ), "Wrong lockedPremium"
+        assert (abs(final_locked_liquidity - initial_locked_liquidity)) == abs(
+            new_amount - old_amount
+        ), "Wrong lockedAmount"
+
+        chain.revert()
+
+    new_locks = [
+        (tokenX_amount_3 * 0.95, int(old_premium * 0.95)),
+        (tokenX_amount_3 * 0.95, int(old_premium * 1)),
+        (tokenX_amount_3 * 1.05, int(old_premium * 1.05)),
+    ]
+    for i in new_locks:
+        test_change_lock(i[0], i[1])
+    print("changed lock")
 
     # send() Should send profit to option holder
     # Revert if msg.sender does not has OPTION_ISSUER_ROLE
@@ -308,6 +411,48 @@ def test_ibfr_pool(contracts, accounts, chain):
     # If amount of tokenx to be sent as profit are X
     # then Transfer the min(X, ll.amount)
     # Emit events accordingly
+    def test_send(payout, id):
+        chain.snapshot()
+        initial_locked_liquidity = ibfr_pool.lockedAmount()
+        initial_locked_premimum = ibfr_pool.lockedPremium()
+        initial_tokenX_balance_user = tokenX.balanceOf(user_1)
+        ll = ibfr_pool.lockedLiquidity(user_2, id)
+        expected_payout = min(payout, ll["amount"])
+
+        send = ibfr_pool.send(id, user_1, payout, {"from": user_2})
+
+        final_ll = ibfr_pool.lockedLiquidity(user_2, id)
+        final_locked_liquidity = ibfr_pool.lockedAmount()
+        final_tokenX_balance_user = tokenX.balanceOf(user_1)
+        final_locked_premimum = ibfr_pool.lockedPremium()
+
+        if expected_payout > ll["premium"]:
+            assert (
+                send.events["Loss"]["amount"] == expected_payout - ll["premium"]
+            ), "Wrong loss amount"
+        else:
+            assert (
+                send.events["Profit"]["amount"] == ll["premium"] - expected_payout
+            ), "Wrong profit amount"
+
+        assert final_ll["locked"] == False, "Wrong state"
+        assert (
+            initial_locked_premimum - final_locked_premimum == ll["premium"]
+        ), "Wrong lockedPremium"
+        assert (
+            initial_locked_liquidity - final_locked_liquidity == ll["amount"]
+        ), "Wrong lockedAmount"
+        assert (
+            final_tokenX_balance_user - initial_tokenX_balance_user
+        ) == expected_payout, "Wrong user balance"
+        chain.revert()
+
+    payouts = [int(lock_amount * 0.95), int(lock_amount * 1.05)]
+    with brownie.reverts():  # Wrong role
+        ibfr_pool.send(lock_ids[0], user_1, tokenX_amount_3, {"from": user_1})
+    for index, id in enumerate(lock_ids):
+        test_send(payouts[index], id)
+    print("sent profits")
 
     # shareOf() Should return user's share of token(X) in the lp
     # Should return 0 if totalSupply is 0
@@ -337,8 +482,7 @@ def test_ibfr_pool(contracts, accounts, chain):
 
     # Unlock all the funds before rollOver
     for id in lock_ids:
-        ibfr_pool.unlock(id, {"from": user_2})
-
+        test_unlock(user_2, id)
     assert ibfr_pool.lockedAmount() == 0, "Wrong value"
     assert ibfr_pool.lockedPremium() == 0, "Wrong value"
 
@@ -355,6 +499,9 @@ def test_ibfr_pool(contracts, accounts, chain):
 
     with brownie.reverts("Pool: Not accepting withdraw requests currently"):
         withdraw = ibfr_pool.withdraw(tokenX_amount_1, {"from": user_1})
+
+    with brownie.reverts():  # Already unlocked
+        ibfr_pool.send(lock_ids[0], user_1, tokenX_amount_3, {"from": user_2})
 
     # chain.revert()
 

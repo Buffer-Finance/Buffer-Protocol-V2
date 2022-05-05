@@ -22,7 +22,7 @@ contract BufferEuropeanUSDCTokenXOptions is
     BufferNFTCore
 {
     ERC20 public USDC;
-    ERC20 public immutable tokenX;
+    ERC20 public tokenX;
     mapping(uint256 => string) private _tokenURIs;
     IPriceProvider public priceProvider;
     OptionType public fixedOptionType = OptionType.Call;
@@ -200,7 +200,6 @@ contract BufferEuropeanUSDCTokenXOptions is
         pool.lock(id, lockedAmount, premium);
     }
 
-
     /**
      * @notice Sets the expiry price in the oracle
      * @dev a roundId must be provided to confirm price validity,
@@ -214,7 +213,7 @@ contract BufferEuropeanUSDCTokenXOptions is
         (, uint256 price, , uint256 roundTimestamp, ) = priceProvider
             .getRoundData(roundId);
         uint256 expiryTimestamp = pool.fixedExpiry();
-        require(expiryTimestamp <= roundTimestamp, "C1");
+        require(expiryTimestamp < roundTimestamp, "C1");
         require(price >= 0, "C2");
         uint256 previousRoundId = roundId - 1;
         while (!isCorrectRoundId) {
@@ -227,7 +226,7 @@ contract BufferEuropeanUSDCTokenXOptions is
                 revert("C4");
             } else {
                 isCorrectRoundId = true;
-                expiryToRoundID[expiryTimestamp] = roundId;
+                expiryToRoundID[expiryTimestamp] = previousRoundId;
             }
         }
     }

@@ -37,7 +37,7 @@ contract BufferIBFRPoolV2 is
     bytes32 public constant PROJECT_OWNER_ROLE =
         keccak256("PROJECT_OWNER_ROLE");
 
-    ERC20 public immutable tokenX;
+    ERC20 public tokenX;
 
     struct WithdrawRequest {
         uint256 withdrawAmount;
@@ -288,6 +288,18 @@ contract BufferIBFRPoolV2 is
             );
             _initiateWithdraw(tokenXAmount, msg.sender);
         }
+    }
+
+    /**
+     * @notice allows admin to send back the funds of the depositer
+     * @param user  User address for which the withdrawal has to be made
+     * @param tokenXAmount  Amount of X to receive
+     */
+    function adminWithdraw(address user, uint256 tokenXAmount)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        _withdraw(tokenXAmount, user);
     }
 
     /**

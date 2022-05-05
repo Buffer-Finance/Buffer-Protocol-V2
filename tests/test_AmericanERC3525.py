@@ -215,8 +215,8 @@ class OptionERC3525Testing(object):
         ), "Wrong parent premium"
         assert (
             initial_parent_option_details["premium"]
-            - final_parent_option_details["premium"],
-            totalChildPremium,
+            - final_parent_option_details["premium"]
+            == totalChildPremium
         ), "Wrong parent locked amount"
 
     def verify_merge(self, merge_ids, target_id):

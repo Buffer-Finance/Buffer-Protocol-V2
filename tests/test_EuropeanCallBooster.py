@@ -102,6 +102,7 @@ class OptionERC3525Testing(object):
             self.tokenX.approve(
                 self.tokenX_options.address, total_fee, {"from": minter}
             )
+
         else:
             # Because options contract does not has any tokensX
             with brownie.reverts():
@@ -145,7 +146,6 @@ class OptionERC3525Testing(object):
         self.tokenX_options.approvePoolToTransferTokenX(
             {"from": self.owner},
         )
-
         # Initial values
         settlementFeeRecipient = self.options_config.settlementFeeRecipient()
         stakingFeePercentage = self.options_config.stakingFeePercentage()
@@ -269,10 +269,11 @@ class OptionERC3525Testing(object):
         fixedStrike = self.options_config.fixedStrike()
         assert fixedStrike == strike, "Wrong strike"
 
-    def admin_function(self, round_id):
+    def admin_function(self, round_id, expected_round_id):
 
         self.tokenX_options.setRoundIDForExpiry(round_id, {"from": self.accounts[0]})
-        assert self.tokenX_options.expiryToRoundID(self.expiry) == round_id
+        _round_id = self.tokenX_options.expiryToRoundID(self.expiry)
+        assert _round_id == expected_round_id
 
     def european_unlock(self, round_id):
         self.chain.snapshot()
@@ -282,20 +283,37 @@ class OptionERC3525Testing(object):
         self.chain.sleep(self.period + ONE_DAY)
         self.chain.mine(1)
         option_data = self.tokenX_options.options(self.option_id)
+        initial_tokenX_balance_option_holder = self.tokenX.balanceOf(self.option_holder)
         unlock_option = self.tokenX_options.unlock(
             self.option_id, {"from": self.option_holder}
         )
+        final_tokenX_balance_option_holder = self.tokenX.balanceOf(self.option_holder)
+        print("unlocked", self.option_id)
+        option_data = self.tokenX_options.options(self.option_id)
+
         unlock_events = unlock_option.events
         (_, price, _, _, _) = self.pp.getRoundData(round_id)
 
         if self.strike <= price:
+            print("profit")
+            expected_profit = ((price - self.strike) * self.amount) / price
+
+            assert unlock_events["Exercise"]["profit"] == expected_profit
+            assert option_data["state"] == 2
             assert (
-                unlock_events["Exercise"]["profit"]
-                == ((price - self.strike) * self.amount) / price
+                final_tokenX_balance_option_holder
+                - initial_tokenX_balance_option_holder
+                == expected_profit
             )
-            # NOTE Add assert for option state
         else:
+            print("Expire")
             assert unlock_events["Expire"]["premium"] == option_data[4]
+            assert option_data["state"] == 3
+            assert (
+                final_tokenX_balance_option_holder
+                - initial_tokenX_balance_option_holder
+                == 0
+            )
         self.chain.revert()
 
     def european_exercise(self, round_id):
@@ -305,14 +323,34 @@ class OptionERC3525Testing(object):
         self.chain.sleep(self.period + ONE_DAY)
         self.chain.mine(1)
         (_, price, _, _, _) = self.pp.getRoundData(round_id)
+        exerciser = self.user_2
+
         if self.strike <= price:
-            exercise_option = self.tokenX_options.exercise(
-                self.option_id, {"from": self.option_holder}
+            initial_tokenX_balance_option_holder = self.tokenX.balanceOf(
+                self.option_holder
             )
+            initial_tokenX_balance_exerciser = self.tokenX.balanceOf(exerciser)
+            expected_profit = ((price - self.strike) * self.amount) / price
+
+            exercise_option = self.tokenX_options.exercise(
+                self.option_id, {"from": exerciser}
+            )
+            print("exercised", self.option_id)
+
+            final_tokenX_balance_option_holder = self.tokenX.balanceOf(
+                self.option_holder
+            )
+            final_tokenX_balance_exerciser = self.tokenX.balanceOf(exerciser)
             exercise_events = exercise_option.events
+
+            assert exercise_events["Exercise"]["profit"] == expected_profit
             assert (
-                exercise_events["Exercise"]["profit"]
-                == ((price - self.strike) * self.amount) / price
+                final_tokenX_balance_option_holder
+                - initial_tokenX_balance_option_holder
+                == expected_profit
+            )
+            assert (
+                final_tokenX_balance_exerciser - initial_tokenX_balance_exerciser == 0
             )
         else:
             with brownie.reverts("O17"):
@@ -321,7 +359,11 @@ class OptionERC3525Testing(object):
                 )
         self.chain.revert()
 
-    def test_european_changes(self, round_ids, expiration_dates, round_id, strike):
+    def test_european_changes(
+        self, round_ids, expiration_dates, round_id, expected_round_id, strike
+    ):
+        self.chain.snapshot()
+
         for count, _round_id in enumerate(round_ids):
             self.pp.setRoundData(
                 _round_id,
@@ -329,13 +371,15 @@ class OptionERC3525Testing(object):
                 strike,
                 {"from": self.accounts[0]},
             )
-        self.admin_function(round_id)
-        self.european_unlock(round_id)
-        self.european_exercise(round_id)
+        self.admin_function(round_id, expected_round_id)
+        self.european_unlock(expected_round_id)
+        self.european_exercise(expected_round_id)
+        self.chain.revert()
 
     def complete_flow_test(self):
         self.verify_owner()
         self.option_id = self.verify_creation(self.option_holder, 1)
+        self.option_id = self.verify_creation(self.option_holder, 0)
 
         self.chain.snapshot()
         with brownie.reverts("O20"):
@@ -346,48 +390,53 @@ class OptionERC3525Testing(object):
             )
         self.chain.revert()
 
-        # Continuos one succeeds, in OTM
+        # Continuos one succeeds, in ITM
         self.test_european_changes(
-            [1, 2, 4],
+            [1, 2, 3],
             [self.expiry - 2000, self.expiry, self.expiry + 86400],
+            3,
             2,
+            self.strike + 100,
+        )
+
+        # Discontinuos one succeeds, in OTM
+        self.test_european_changes(
+            [4, 5, 7],
+            [self.expiry - 2000, self.expiry, self.expiry + 86400],
+            7,
+            5,
             self.strike - 100,
         )
 
-        # Discountinious succeeds, in ATM
+        # Lies between 2 and 4, in ATM
         self.test_european_changes(
-            [1, 2, 4],
-            [self.expiry - 2000, self.expiry - 1000, self.expiry],
-            4,
-            self.strike,
-        )
-
-        # Lies between 2 and 4, in ITM
-        self.test_european_changes(
-            [1, 2, 4],
+            [8, 9, 10],
             [self.expiry - 2000, self.expiry - 500, self.expiry + 500],
-            4,
-            self.strike + 100,
+            10,
+            9,
+            self.strike,
         )
 
         # None succeed , in ATM
         try:
             self.test_european_changes(
-                [1, 2, 4],
+                [11, 12, 13],
                 [self.expiry - 2000, self.expiry - 1000, self.expiry - 500],
-                4,
+                13,
+                0,
                 self.strike,
             )
         except Exception as e:
             assert str(e).startswith("revert: C1") == True
 
-        # Invalid round ID entry
+        # None succeed , in ATM
         try:
             self.test_european_changes(
-                [1, 2, 4],
-                [self.expiry - 2000, self.expiry - 500, self.expiry + 500],
-                4,
-                self.strike + 100,
+                [11, 12, 13],
+                [self.expiry - 2000, self.expiry - 1000, self.expiry],
+                13,
+                0,
+                self.strike,
             )
         except Exception as e:
             assert str(e).startswith("revert: C1") == True
@@ -398,6 +447,7 @@ class OptionERC3525Testing(object):
                 [1, 2, 4],
                 [self.expiry + 2000, self.expiry, self.expiry + 500],
                 1,
+                0,
                 self.strike + 100,
             )
         except Exception as e:
@@ -406,9 +456,10 @@ class OptionERC3525Testing(object):
         # Round ID is of greater value then expiry
         try:
             self.test_european_changes(
-                [1, 2, 4],
+                [14, 15, 16],
                 [self.expiry - 2000, self.expiry + 200, self.expiry + 500],
-                4,
+                16,
+                0,
                 self.strike + 100,
             )
         except Exception as e:

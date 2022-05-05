@@ -215,8 +215,8 @@ class OptionERC3525Testing(object):
         ), "Wrong parent premium"
         assert (
             initial_parent_option_details["premium"]
-            - final_parent_option_details["premium"],
-            totalChildPremium,
+            - final_parent_option_details["premium"]
+            == totalChildPremium
         ), "Wrong parent locked amount"
 
     def verify_merge(self, merge_ids, target_id):
@@ -402,6 +402,7 @@ class OptionERC3525Testing(object):
         self.set_round_id(
             [1, 2, 4],
             [self.expiry - 2000, self.expiry, self.expiry + 86400],
+            4,
             2,
             self.strike - 100,
         )
@@ -488,11 +489,11 @@ class OptionERC3525Testing(object):
         assert fixedStrike == strike, "Wrong strike"
 
     def admin_function(self, round_id):
-
         self.tokenX_options.setRoundIDForExpiry(round_id, {"from": self.accounts[0]})
-        assert self.tokenX_options.expiryToRoundID(self.expiry) == round_id
 
-    def set_round_id(self, round_ids, expiration_dates, round_id, strike):
+    def set_round_id(
+        self, round_ids, expiration_dates, round_id, expected_round_id, strike
+    ):
         for count, _round_id in enumerate(round_ids):
             self.pp.setRoundData(
                 _round_id,
@@ -500,7 +501,7 @@ class OptionERC3525Testing(object):
                 strike,
                 {"from": self.accounts[0]},
             )
-        self.round_id = round_id
+        self.round_id = expected_round_id
         self.admin_function(round_id)
 
     def verify_temp_exercise(self, id):
@@ -521,6 +522,7 @@ class OptionERC3525Testing(object):
             [1, 2, 4],
             [self.expiry - 2000, self.expiry - 500, self.expiry + 500],
             4,
+            2,
             self.strike + 100,
         )
         for _ in range(2):
